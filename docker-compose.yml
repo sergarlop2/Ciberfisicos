@@ -1,0 +1,53 @@
+version: '3'
+
+services:
+  servidor:
+    build: ./servidor
+    image: ciberfisicos/servidor:1.0
+    container_name: servidor_ciber
+    environment:
+      MQTT_BROKER: broker.hivemq.com
+      MQTT_PORT: 1883
+      DB_HOST: basedatos_ciber
+      DB_NAME: ciberfisicos
+      DB_USER: admin
+      DB_PASSWORD: admin123
+      TZ: Europe/Madrid
+    networks:
+      - ciberfisicos_network
+
+  base_datos:
+    image: ciberfisicos/basedatos:1.0
+    build: ./base_datos
+    container_name: basedatos_ciber
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+      POSTGRES_DB: ciberfisicos
+      TZ: Europe/Madrid
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./base_datos/postgres_data:/var/lib/postgresql/data
+    networks:
+      - ciberfisicos_network
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: grafana_ciber
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      TZ: Europe/Madrid
+    volumes:
+      - ./grafana/grafana_data:/var/lib/grafana
+    user: "1000"
+    networks:
+      - ciberfisicos_network
+
+networks:
+  ciberfisicos_network:
+    driver: bridge
+    name: ciberfisicos_network
