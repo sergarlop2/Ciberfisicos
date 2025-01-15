@@ -9,6 +9,7 @@ services:
       MQTT_BROKER: broker.hivemq.com
       MQTT_PORT: 1883
       DB_HOST: basedatos_ciber
+      DB_PORT: 5432
       DB_NAME: ciberfisicos
       DB_USER: admin
       DB_PASSWORD: admin123
