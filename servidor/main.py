@@ -7,7 +7,7 @@ import psycopg2
 import numpy as np
 
 # Numero de datos a recibir
-NUM_DATOS = 5
+NUM_DATOS = 64
 
 # Configuramos el logger para imprimir por consola
 logging.basicConfig(
