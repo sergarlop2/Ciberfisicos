@@ -96,7 +96,7 @@ def store_fft_in_db(fft_x, fft_y, fft_z, timestamp):
         conn.commit()  # Confirmamos la transacción
         cur.close()
         conn.close()
-        logging.info(f"Datos de las FFTs {[fft_x, fft_y, fft_z]} almacenados en la base de datos con timestamp {timestamps_acel}.")
+        logging.info(f"Datos de las FFTs {[fft_x, fft_y, fft_z]} almacenados en la base de datos con timestamp {timestamp}.")
 
     except Exception as e:
         logging.error(f"Error al almacenar los datos de las FFTs en la base de datos: {e}")
