@@ -6,8 +6,9 @@ import os
 import psycopg2
 import numpy as np
 
-# Numero de datos a recibir
-NUM_DATOS = 64
+# Numero de datos a recibir segun el modo
+NUM_NORMAL = 64
+NUM_CONTINUO = 1024
 
 # Configuramos el logger para imprimir por consola
 logging.basicConfig(
@@ -18,8 +19,9 @@ logging.basicConfig(
 # Leer las variables de entorno
 MQTT_BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")  # Valor por defecto si no está definido
 MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))  # Convertimos a entero
-TOPIC_ACEL = "ciberfisicos/aceleraciones"  # Tópico de aceleraciones
-TOPIC_TEMP_HUM = "ciberfisicos/temp_hum" # Tópico de temperatura y humedad
+TOPIC_CONTROL = "SCF/sejuja/moni" # Topico de control
+TOPIC_ACEL = "SCF/sejuja/data/aceleracion"  # Tópico de aceleraciones
+TOPIC_TEMP_HUM = "SCF/sejuja/data/tempHum" # Tópico de temperatura y humedad
 
 # Configuración de la base de datos PostgreSQL
 DB_HOST = os.getenv("DB_HOST", "localhost")
@@ -113,27 +115,43 @@ def store_temp_hum_in_db(temperatura, humedad, timestamp):
 # Funcion para gestionar un mensaje de aceleraciones
 def handle_aceler(msg):
 
-    # Parseamos el mensaje como JSON
-    data = json.loads(msg.payload.decode())
+    try:
+        # Parseamos el mensaje como JSON
+        data = json.loads(msg.payload.decode())
+
+        # Extraemos la longitud y las muestras
+        length = data.get("l", 0)
+        samples = data.get("s", [])
         
-    # Extraemos las aceleraciones y el timestamp del mensaje
-    acel_x = data.get("acel_x")
-    acel_y = data.get("acel_y")
-    acel_z = data.get("acel_z")
-    timestamp = data.get("timestamp")
+        if length != len(samples):
+            logging.warning(f"La longitud del mensaje ({length}) no coincide con el número de muestras ({len(samples)}).")
+            return
 
-    if acel_x is not None and acel_y is not None and acel_z is not None and timestamp is not None:
+        for sample in samples:
+            timestamp = sample.get("t")
+            aceleraciones = sample.get("a", [])
 
-        # Almacenamos las aceleraciones en las listas globales
-        aceleraciones_x.append(acel_x)
-        aceleraciones_y.append(acel_y)
-        aceleraciones_z.append(acel_z)
-        timestamps_acel.append(timestamp)
+            if len(aceleraciones) != 3 or not timestamp:
+                logging.warning(f"Muestra incompleta: {sample}")
+                aceleraciones_x.clear()
+                aceleraciones_y.clear()
+                aceleraciones_z.clear()
+                timestamps_acel.clear()
+                return
 
-        # Si hemos recibido 5 mensajes, calculamos las FFTs
-        if len(aceleraciones_x) == NUM_DATOS:
-            logging.info(f"Recibidos {NUM_DATOS} mensajes, calculando FFTs.")
-            
+            # Añadimos las aceleraciones a las listas globales
+            aceleraciones_x.append(aceleraciones[0])
+            aceleraciones_y.append(aceleraciones[1])
+            aceleraciones_z.append(aceleraciones[2])
+            timestamps_acel.append(timestamp)
+
+            # Guardamos en la base de datos cada muestra
+            store_acel_in_db(aceleraciones[0], aceleraciones[1], aceleraciones[2], timestamp)
+
+        # Comprobamos si se alcanza el número minimo de datos para la FFT
+        if len(aceleraciones_x) >= NUM_NORMAL:  
+            logging.info("Calculando FFTs...")
+
             # Calculamos la FFT para cada componente de aceleración
             fft_x = [float(np.abs(val)) for val in np.fft.fft(aceleraciones_x)]
             fft_y = [float(np.abs(val)) for val in np.fft.fft(aceleraciones_y)]
@@ -142,21 +160,17 @@ def handle_aceler(msg):
             # Almacenamos los resultados de la FFT en la base de datos
             for i in range(len(fft_x)):
                 store_fft_in_db(fft_x[i], fft_y[i], fft_z[i], timestamps_acel[i])
-            
-            # Almacenamos las aceleraciones en la base de datos
-            for i in range(len(aceleraciones_x)):
-                store_acel_in_db(aceleraciones_x[i],
-                                 aceleraciones_y[i],
-                                 aceleraciones_z[i],
-                                 timestamps_acel[i])
 
-            # Limpiamos las listas para el siguiente lote de datos
+            # Limpiamos las listas para el próximo lote
             aceleraciones_x.clear()
             aceleraciones_y.clear()
             aceleraciones_z.clear()
             timestamps_acel.clear()
-    else:
-        logging.warning("Mensaje recibido sin datos completos de aceleraciones o timestamp")
+
+    except json.JSONDecodeError as e:
+        logging.error(f"Error al decodificar JSON: {e}")
+    except Exception as e:
+        logging.error(f"Error al procesar mensaje de aceleración: {e}")
 
 # Función para gestionar un mensaje de temperatura y humedad
 def handle_temp_hum(msg):
