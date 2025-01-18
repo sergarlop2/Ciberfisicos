@@ -4,6 +4,8 @@ import logging
 import paho.mqtt.client as mqtt
 import os
 import psycopg2
+import pytz
+from datetime import datetime, timedelta
 import numpy as np
 
 # Numero de datos a recibir segun el modo
@@ -32,6 +34,9 @@ DB_PORT = os.getenv("DB_PORT", 5432)
 DB_NAME = os.getenv("DB_NAME", "tu_base_de_datos")
 DB_USER = os.getenv("DB_USER", "tu_usuario")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "tu_contraseña")
+
+# Configuracion de la zona horaria
+MADRID_TZ = pytz.timezone(os.getenv("TZ", "Europe/Madrid"))
 
 # Variables globales
 aceleraciones_x = []
@@ -186,16 +191,21 @@ def handle_aceler(msg, client):
             return
 
         for sample in samples:
-            timestamp = sample.get("t")
+            timestamp_str = sample.get("t")
             aceleraciones = sample.get("a", [])
 
-            if len(aceleraciones) != 3 or not timestamp:
+            if len(aceleraciones) != 3 or not timestamp_str:
                 logging.warning(f"Muestra incompleta: {sample}")
                 aceleraciones_x.clear()
                 aceleraciones_y.clear()
                 aceleraciones_z.clear()
                 timestamps_acel.clear()
                 return
+
+            # Convertimos el timestamp a datetime y lo asociamos con la zona horaria de Madrid
+            timestamp = datetime.strptime(timestamp_str, "%d-%m-%yT%H:%M:%S.%f")
+            timestamp = MADRID_TZ.localize(timestamp)
+            timestamp = timestamp - timedelta(hours=1)  # Restamos una hora
 
             # Añadimos las aceleraciones a las listas globales
             aceleraciones_x.append(aceleraciones[0])
@@ -244,9 +254,15 @@ def handle_temp_hum(msg, client):
         # Extraemos la temperatura, humedad y el timestamp del mensaje
         temperatura = data.get("temperatura")
         humedad = data.get("humedad")
-        timestamp = data.get("timestamp")
+        timestamp_str = data.get("timestamp")
 
-        if temperatura is not None and humedad is not None and timestamp is not None:
+        if temperatura is not None and humedad is not None and timestamp_str is not None:
+            # Convertimos el timestamp a datetime y lo asociamos con la zona horaria de Madrid
+            timestamp = datetime.strptime(timestamp_str, "%d-%m-%yT%H:%M:%S.%f")
+            timestamp = MADRID_TZ.localize(timestamp)
+            timestamp = timestamp - timedelta(hours=1)  # Restamos una hora
+
+            # Guardamos los datos en la base de datos
             store_temp_hum_in_db(temperatura, humedad, timestamp)
 
             # Verificar y cambiar al modo según los umbrales con histeresis
