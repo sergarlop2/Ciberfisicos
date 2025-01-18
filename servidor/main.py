@@ -10,11 +10,14 @@ import numpy as np
 NUM_NORMAL = 64
 NUM_CONTINUO = 1024
 
-# Configuramos el logger para imprimir por consola
-logging.basicConfig(
-    level=logging.DEBUG,  # Establece el nivel mínimo de logging
-    format='%(asctime)s - %(levelname)s - %(message)s'  # Formato del log
-)
+# Umbrales con histeresis
+TEMP_THRESHOLD_HIGH = 30.0  # Umbral superior para temperatura
+TEMP_THRESHOLD_LOW = 28.0   # Umbral inferior para temperatura
+HUM_THRESHOLD_HIGH = 70.0   # Umbral superior para humedad
+HUM_THRESHOLD_LOW = 65.0    # Umbral inferior para humedad
+
+# Umbral FFT
+FFT_THRESHOLD = 10 # Consideramos pico como X veces el valor medio de la FFT
 
 # Leer las variables de entorno
 MQTT_BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")  # Valor por defecto si no está definido
@@ -35,6 +38,13 @@ aceleraciones_x = []
 aceleraciones_y = []
 aceleraciones_z = []
 timestamps_acel = []
+MODO_FUNC = 0 # 0 para el modo normal. 1 para el modo continuo
+
+# Configuramos el logger para imprimir por consola
+logging.basicConfig(
+    level=logging.DEBUG,  # Establece el nivel mínimo de logging
+    format='%(asctime)s - %(levelname)s - %(message)s'  # Formato del log
+)
 
 # Función para crear una conexión con la base de datos
 def get_db_connection():
@@ -112,8 +122,56 @@ def store_temp_hum_in_db(temperatura, humedad, timestamp):
     except Exception as e:
         logging.error(f"Error al almacenar los datos de temperatura y humedad en la base de datos: {e}")
 
+# Función para cambiar al modo continuo con histeresis
+def check_and_switch_mode(temperatura, humedad, client):
+    global MODO_FUNC
+
+    # Modo normal -> continuo si se exceden los umbrales superiores
+    if MODO_FUNC == 0 and (temperatura > TEMP_THRESHOLD_HIGH or humedad > HUM_THRESHOLD_HIGH):
+        MODO_FUNC = 1
+        logging.info(f"Cambiando al modo continuo por temperatura={temperatura} o humedad={humedad}.")
+
+        # Publicamos mensaje en modo continuo
+        client.publish(TOPIC_CONTROL, "1")
+
+    # Modo continuo -> normal si se bajan los umbrales inferiores
+    elif MODO_FUNC == 1 and (temperatura < TEMP_THRESHOLD_LOW and humedad < HUM_THRESHOLD_LOW):
+        MODO_FUNC = 0
+        logging.info(f"Volviendo al modo normal: Temperatura={temperatura}, Humedad={humedad}.")
+
+        # Publicamos mensaje en modo normal
+        client.publish(TOPIC_CONTROL, "0")
+    else:
+        logging.info(f"Modo actual ({'continuo' if MODO_FUNC == 1 else 'normal'}): Temperatura={temperatura}, Humedad={humedad}.")
+
+# Función para detectar picos en la FFT y cambiar de modo
+def detect_peak_and_switch_mode(fft_data, client):
+    global MODO_FUNC
+    detected = False
+
+    # Calculamos el valor medio y el valor máximo de la FFT
+    fft_mean = np.mean(fft_data)
+    fft_max = np.max(fft_data)
+
+    # Si el valor máximo se aleja mucho del valor medio, consideramos que hay un pico
+    if fft_max > fft_mean * FFT_THRESHOLD: 
+        if MODO_FUNC == 0:
+            MODO_FUNC = 1
+            detected = True
+            # Publicamos mensaje en modo continuo
+            client.publish(TOPIC_CONTROL, "1")
+            logging.info("Detectado pico en la FFT, cambiando al modo continuo.")
+    else:
+        if MODO_FUNC == 1:
+            MODO_FUNC = 0
+            # Publicamos mensaje en modo normal
+            client.publish(TOPIC_CONTROL, "0")
+            logging.info("No se detectó pico en la FFT, cambiando al modo normal.")
+
+    return detected
+
 # Funcion para gestionar un mensaje de aceleraciones
-def handle_aceler(msg):
+def handle_aceler(msg, client):
 
     try:
         # Parseamos el mensaje como JSON
@@ -149,7 +207,7 @@ def handle_aceler(msg):
             store_acel_in_db(aceleraciones[0], aceleraciones[1], aceleraciones[2], timestamp)
 
         # Comprobamos si se alcanza el número minimo de datos para la FFT
-        if len(aceleraciones_x) >= NUM_NORMAL:  
+        if len(aceleraciones_x) == NUM_NORMAL or len(aceleraciones_x) == NUM_CONTINUO:  
             logging.info("Calculando FFTs...")
 
             # Calculamos la FFT para cada componente de aceleración
@@ -157,15 +215,20 @@ def handle_aceler(msg):
             fft_y = [float(np.abs(val)) for val in np.fft.fft(aceleraciones_y)]
             fft_z = [float(np.abs(val)) for val in np.fft.fft(aceleraciones_z)]
 
+            # Detectamos picos y cambiamos de modo si es necesario
+            if not detect_peak_and_switch_mode(fft_x, client):
+                if not detect_peak_and_switch_mode(fft_y, client):
+                    detect_peak_and_switch_mode(fft_z, client)
+
             # Almacenamos los resultados de la FFT en la base de datos
             for i in range(len(fft_x)):
                 store_fft_in_db(fft_x[i], fft_y[i], fft_z[i], timestamps_acel[i])
 
-            # Limpiamos las listas para el próximo lote
-            aceleraciones_x.clear()
-            aceleraciones_y.clear()
-            aceleraciones_z.clear()
-            timestamps_acel.clear()
+        # Limpiamos las listas para el próximo lote
+        aceleraciones_x.clear()
+        aceleraciones_y.clear()
+        aceleraciones_z.clear()
+        timestamps_acel.clear()
 
     except json.JSONDecodeError as e:
         logging.error(f"Error al decodificar JSON: {e}")
@@ -173,7 +236,7 @@ def handle_aceler(msg):
         logging.error(f"Error al procesar mensaje de aceleración: {e}")
 
 # Función para gestionar un mensaje de temperatura y humedad
-def handle_temp_hum(msg):
+def handle_temp_hum(msg, client):
     try:
         # Parseamos el mensaje como JSON
         data = json.loads(msg.payload.decode())
@@ -185,6 +248,9 @@ def handle_temp_hum(msg):
 
         if temperatura is not None and humedad is not None and timestamp is not None:
             store_temp_hum_in_db(temperatura, humedad, timestamp)
+
+            # Verificar y cambiar al modo según los umbrales con histeresis
+            check_and_switch_mode(temperatura, humedad, client)
         else:
             logging.warning("Mensaje recibido sin datos completos de temperatura, humedad o timestamp.")
 
@@ -196,9 +262,9 @@ def on_message(client, userdata, msg):
     try:
 
         if msg.topic == TOPIC_ACEL:
-            handle_aceler(msg)
+            handle_aceler(msg, client)
         elif msg.topic == TOPIC_TEMP_HUM:
-            handle_temp_hum(msg)
+            handle_temp_hum(msg, client)
 
     except Exception as e:
         logging.error(f"Error al procesar el mensaje: {e}")
@@ -217,6 +283,9 @@ def main():
     # Nos suscribimos a los tópicos
     client.subscribe(TOPIC_ACEL)
     client.subscribe(TOPIC_TEMP_HUM)
+
+    # Por defecto, publicamos mensaje en modo normal
+    client.publish(TOPIC_CONTROL, "0")
 
     # Bucle infinito del cliente MQTT
     client.loop_forever()

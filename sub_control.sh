@@ -1,0 +1,1 @@
+mosquitto_sub -h broker.hivemq.com -p 1883 -t SCF/sejuja/moni -v
