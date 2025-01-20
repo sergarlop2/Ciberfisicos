@@ -12,6 +12,9 @@ import numpy as np
 NUM_NORMAL = 64
 NUM_CONTINUO = 1024
 
+# Frecuencia de muestreo (Hz)
+FREC_MUESTREO = 53
+
 # Umbrales con histeresis
 TEMP_THRESHOLD_HIGH = 30.0  # Umbral superior para temperatura
 TEMP_THRESHOLD_LOW = 28.0   # Umbral inferior para temperatura
@@ -82,21 +85,21 @@ def store_acel_in_db(acel_x, acel_y, acel_z, timestamp):
         logging.error(f"Error al almacenar datos de aceleración en la base de datos: {e}")
 
 # Función para almacenar los resultados de las FFTs en la base de datos
-def store_fft_in_db(fft_x, fft_y, fft_z, timestamp):
+def store_fft_in_db(fft_x, fft_y, fft_z, frec):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
 
         # Guardamos los datos de las FFTs en la base de datos
         cur.execute(
-            "INSERT INTO fft (x, y, z, timestamp) VALUES (%s, %s, %s, %s)",
-            (fft_x, fft_y, fft_z, timestamp)
+            "INSERT INTO fft (x, y, z, frec) VALUES (%s, %s, %s, %s)",
+            (fft_x, fft_y, fft_z, frec)
         )
 
         conn.commit()  # Confirmamos la transacción
         cur.close()
         conn.close()
-        logging.info(f"Datos de las FFTs {[fft_x, fft_y, fft_z]} almacenados en la base de datos con timestamp {timestamp}.")
+        logging.info(f"Datos de las FFTs {[fft_x, fft_y, fft_z]} almacenados en la base de datos con frecuencia {frec}.")
 
     except Exception as e:
         logging.error(f"Error al almacenar los datos de las FFTs en la base de datos: {e}")
@@ -155,8 +158,8 @@ def detect_peak_and_switch_mode(fft_data, client):
     detected = False
 
     # Calculamos el valor medio y el valor máximo de la FFT
-    fft_mean = np.mean(fft_data)
-    fft_max = np.max(fft_data)
+    fft_mean = np.mean(fft_data[1:])
+    fft_max = np.max(fft_data[1:])
 
     # Si el valor máximo se aleja mucho del valor medio, consideramos que hay un pico
     if fft_max > fft_mean * FFT_THRESHOLD: 
@@ -221,18 +224,29 @@ def handle_aceler(msg, client):
             logging.info("Calculando FFTs...")
 
             # Calculamos la FFT para cada componente de aceleración
-            fft_x = [float(np.abs(val)) for val in np.fft.fft(aceleraciones_x)]
-            fft_y = [float(np.abs(val)) for val in np.fft.fft(aceleraciones_y)]
-            fft_z = [float(np.abs(val)) for val in np.fft.fft(aceleraciones_z)]
+            fft_x = [float(20*np.log10(np.abs(val))) for val in np.fft.fft(aceleraciones_x)]
+            fft_y = [float(20*np.log10(np.abs(val))) for val in np.fft.fft(aceleraciones_y)]
+            fft_z = [float(20*np.log10(np.abs(val))) for val in np.fft.fft(aceleraciones_z)]
+
+            # Obtenemos los valores de frecuencia
+            frecs = np.linspace(0, FREC_MUESTREO/2, len(fft_x)).tolist()
 
             # Detectamos picos y cambiamos de modo si es necesario
             if not detect_peak_and_switch_mode(fft_x, client):
                 if not detect_peak_and_switch_mode(fft_y, client):
                     detect_peak_and_switch_mode(fft_z, client)
 
+            # Vaciamos la tabla antes de almacenar los nuevos datos
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("DELETE FROM fft")
+            conn.commit()
+            cur.close()
+            conn.close()
+
             # Almacenamos los resultados de la FFT en la base de datos
             for i in range(len(fft_x)):
-                store_fft_in_db(fft_x[i], fft_y[i], fft_z[i], timestamps_acel[i])
+                store_fft_in_db(fft_x[i], fft_y[i], fft_z[i], frecs[i])
 
         # Limpiamos las listas para el próximo lote
         aceleraciones_x.clear()

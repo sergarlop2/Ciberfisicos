@@ -23,6 +23,6 @@ CREATE TABLE fft (
     x FLOAT,
     y FLOAT,
     z FLOAT,      
-    timestamp TIMESTAMP  
+    frec FLOAT  
 );
 
