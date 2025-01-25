@@ -22,12 +22,13 @@ HUM_THRESHOLD_HIGH = 70.0   # Umbral superior para humedad
 HUM_THRESHOLD_LOW = 65.0    # Umbral inferior para humedad
 
 # Umbral FFT
-FFT_THRESHOLD = 10 # Consideramos pico como X veces el valor medio de la FFT
+FFT_THRESHOLD_DB = 20 # Consideramos pico como X dBs por encima del valor medio de la FFT
 
 # Leer las variables de entorno
 MQTT_BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")  # Valor por defecto si no está definido
 MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))  # Convertimos a entero
-TOPIC_CONTROL = "SCF/sejuja/moni" # Topico de control
+TOPIC_CONTROL_1 = "SCF/sejuja/moni/1" # Topico de control del nodo 1
+TOPIC_CONTROL_2 = "SCF/sejuja/moni/2" # Topico de control del nodo 2
 TOPIC_ACEL = "SCF/sejuja/data/aceleracion"  # Tópico de aceleraciones
 TOPIC_TEMP_HUM = "SCF/sejuja/data/tempHum" # Tópico de temperatura y humedad
 
@@ -140,7 +141,7 @@ def check_and_switch_mode(temperatura, humedad, client):
         logging.info(f"Cambiando al modo continuo por temperatura={temperatura} o humedad={humedad}.")
 
         # Publicamos mensaje en modo continuo
-        client.publish(TOPIC_CONTROL, "1")
+        client.publish(TOPIC_CONTROL_2, "1")
 
     # Modo continuo -> normal si se bajan los umbrales inferiores
     elif MODO_FUNC == 1 and (temperatura < TEMP_THRESHOLD_LOW and humedad < HUM_THRESHOLD_LOW):
@@ -148,7 +149,7 @@ def check_and_switch_mode(temperatura, humedad, client):
         logging.info(f"Volviendo al modo normal: Temperatura={temperatura}, Humedad={humedad}.")
 
         # Publicamos mensaje en modo normal
-        client.publish(TOPIC_CONTROL, "0")
+        client.publish(TOPIC_CONTROL_2, "0")
     else:
         logging.info(f"Modo actual ({'continuo' if MODO_FUNC == 1 else 'normal'}): Temperatura={temperatura}, Humedad={humedad}.")
 
@@ -162,18 +163,18 @@ def detect_peak_and_switch_mode(fft_data, client):
     fft_max = np.max(fft_data[1:])
 
     # Si el valor máximo se aleja mucho del valor medio, consideramos que hay un pico
-    if fft_max > fft_mean * FFT_THRESHOLD: 
+    if fft_max > fft_mean + FFT_THRESHOLD_DB: 
         if MODO_FUNC == 0:
             MODO_FUNC = 1
             detected = True
             # Publicamos mensaje en modo continuo
-            client.publish(TOPIC_CONTROL, "1")
+            client.publish(TOPIC_CONTROL_1, "1")
             logging.info("Detectado pico en la FFT, cambiando al modo continuo.")
     else:
         if MODO_FUNC == 1:
             MODO_FUNC = 0
             # Publicamos mensaje en modo normal
-            client.publish(TOPIC_CONTROL, "0")
+            client.publish(TOPIC_CONTROL_1, "0")
             logging.info("No se detectó pico en la FFT, cambiando al modo normal.")
 
     return detected
@@ -315,7 +316,8 @@ def main():
     client.subscribe(TOPIC_TEMP_HUM)
 
     # Por defecto, publicamos mensaje en modo normal
-    client.publish(TOPIC_CONTROL, "0")
+    client.publish(TOPIC_CONTROL_1, "0")
+    client.publish(TOPIC_CONTROL_2, "0")
 
     # Bucle infinito del cliente MQTT
     client.loop_forever()
