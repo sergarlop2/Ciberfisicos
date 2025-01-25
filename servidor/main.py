@@ -234,12 +234,12 @@ def handle_aceler(msg, client):
             logging.info("Calculando FFTs...")
 
             # Calculamos la FFT para cada componente de aceleración
-            fft_x = [float(20*np.log10(np.abs(val))) for val in np.fft.fft(aceleraciones_x)]
-            fft_y = [float(20*np.log10(np.abs(val))) for val in np.fft.fft(aceleraciones_y)]
-            fft_z = [float(20*np.log10(np.abs(val))) for val in np.fft.fft(aceleraciones_z)]
+            fft_x = [float(20*np.log10(np.abs(val))) for val in np.fft.fftshift(np.fft.fft(aceleraciones_x))]
+            fft_y = [float(20*np.log10(np.abs(val))) for val in np.fft.fftshift(np.fft.fft(aceleraciones_y))]
+            fft_z = [float(20*np.log10(np.abs(val))) for val in np.fft.fftshift(np.fft.fft(aceleraciones_z))]
 
             # Obtenemos los valores de frecuencia
-            frecs = np.linspace(0, FREC_MUESTREO/2, len(fft_x)).tolist()
+            frecs = np.linspace(-FREC_MUESTREO/2, FREC_MUESTREO/2, len(fft_x)).tolist()
 
             # Detectamos picos y cambiamos de modo si es necesario
             if not detect_peak_and_switch_mode(fft_x, client):
