@@ -4,6 +4,7 @@ import logging
 import paho.mqtt.client as mqtt
 import os
 import psycopg2
+import psycopg2.extras
 import pytz
 from datetime import datetime, timedelta
 import numpy as np
@@ -66,44 +67,54 @@ def get_db_connection():
     )
 
 # Función para almacenar los datos de aceleración en la base de datos
-def store_acel_in_db(acel_x, acel_y, acel_z, timestamp):
+def store_acel_in_db(acel_x, acel_y, acel_z, timestamps):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # Guardamos los datos de aceleración en la base de datos
-        cur.execute(
-            "INSERT INTO aceleraciones (x, y, z, timestamp) VALUES (%s, %s, %s, %s)",
-            (acel_x, acel_y, acel_z, timestamp)
+        # Construimos una lista de tuplas con los datos
+        data_to_insert = list(zip(acel_x, acel_y, acel_z, timestamps))
+
+        # Realizamos un INSERT masivo
+        psycopg2.extras.execute_values(
+            cur,
+            "INSERT INTO aceleraciones (x, y, z, timestamp) VALUES %s",
+            data_to_insert
         )
 
-        conn.commit()  # Confirmamos la transacción
+        conn.commit()
         cur.close()
         conn.close()
-        logging.info(f"Aceleraciones {[acel_x, acel_y, acel_z]} almacenadas en la base de datos con timestamp {timestamp}.")
-
+        logging.info(f"Se almacenaron {len(acel_x)} muestras de aceleración en la base de datos.")
     except Exception as e:
         logging.error(f"Error al almacenar datos de aceleración en la base de datos: {e}")
 
 # Función para almacenar los resultados de las FFTs en la base de datos
-def store_fft_in_db(fft_x, fft_y, fft_z, frec):
+def store_fft_in_db(fft_x, fft_y, fft_z, frecs):
     try:
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # Guardamos los datos de las FFTs en la base de datos
-        cur.execute(
-            "INSERT INTO fft (x, y, z, frec) VALUES (%s, %s, %s, %s)",
-            (fft_x, fft_y, fft_z, frec)
+        # Eliminamos los datos existentes
+        cur.execute("DELETE FROM fft")
+        conn.commit()
+
+        # Construimos una lista de tuplas con los datos
+        data_to_insert = list(zip(fft_x, fft_y, fft_z, frecs))
+
+        # Realizamos un INSERT masivo
+        psycopg2.extras.execute_values(
+            cur,
+            "INSERT INTO fft (x, y, z, frec) VALUES %s",
+            data_to_insert
         )
 
-        conn.commit()  # Confirmamos la transacción
+        conn.commit()
         cur.close()
         conn.close()
-        logging.info(f"Datos de las FFTs {[fft_x, fft_y, fft_z]} almacenados en la base de datos con frecuencia {frec}.")
-
+        logging.info(f"Se almacenaron {len(fft_x)} valores de FFT en la base de datos.")
     except Exception as e:
-        logging.error(f"Error al almacenar los datos de las FFTs en la base de datos: {e}")
+        logging.error(f"Error al almacenar valores de FFTs en la base de datos: {e}")
 
 # Función para almacenar los resultados de las FFTs en la base de datos
 def store_temp_hum_in_db(temperatura, humedad, timestamp):
@@ -194,16 +205,17 @@ def handle_aceler(msg, client):
             logging.warning(f"La longitud del mensaje ({length}) no coincide con el número de muestras ({len(samples)}).")
             return
 
+        aceleraciones_x = []
+        aceleraciones_y = []
+        aceleraciones_z = []
+        timestamps_acel = []
+
         for sample in samples:
             timestamp_str = sample.get("t")
             aceleraciones = sample.get("a", [])
 
             if len(aceleraciones) != 3 or not timestamp_str:
                 logging.warning(f"Muestra incompleta: {sample}")
-                aceleraciones_x.clear()
-                aceleraciones_y.clear()
-                aceleraciones_z.clear()
-                timestamps_acel.clear()
                 return
 
             # Convertimos el timestamp a datetime y lo asociamos con la zona horaria de Madrid
@@ -216,9 +228,6 @@ def handle_aceler(msg, client):
             aceleraciones_y.append(aceleraciones[1])
             aceleraciones_z.append(aceleraciones[2])
             timestamps_acel.append(timestamp)
-
-            # Guardamos en la base de datos cada muestra
-            store_acel_in_db(aceleraciones[0], aceleraciones[1], aceleraciones[2], timestamp)
 
         # Comprobamos si se alcanza el número minimo de datos para la FFT
         if len(aceleraciones_x) == NUM_NORMAL or len(aceleraciones_x) == NUM_CONTINUO:  
@@ -237,23 +246,10 @@ def handle_aceler(msg, client):
                 if not detect_peak_and_switch_mode(fft_y, client):
                     detect_peak_and_switch_mode(fft_z, client)
 
-            # Vaciamos la tabla antes de almacenar los nuevos datos
-            conn = get_db_connection()
-            cur = conn.cursor()
-            cur.execute("DELETE FROM fft")
-            conn.commit()
-            cur.close()
-            conn.close()
+            # Almacenamos los datos en la base de datos
+            store_acel_in_db(aceleraciones_x, aceleraciones_y, aceleraciones_z, timestamps_acel)
+            store_fft_in_db(fft_x, fft_y, fft_z, frecs)
 
-            # Almacenamos los resultados de la FFT en la base de datos
-            for i in range(len(fft_x)):
-                store_fft_in_db(fft_x[i], fft_y[i], fft_z[i], frecs[i])
-
-        # Limpiamos las listas para el próximo lote
-        aceleraciones_x.clear()
-        aceleraciones_y.clear()
-        aceleraciones_z.clear()
-        timestamps_acel.clear()
 
     except json.JSONDecodeError as e:
         logging.error(f"Error al decodificar JSON: {e}")
