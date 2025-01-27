@@ -9,8 +9,8 @@ TOPIC="SCF/sejuja/data/tempHum"
 MESSAGES=5
 
 # Datos
-TEMP_VALUES=("22.5" "23.0" "21.8" "22.2" "21.5")
-HUM_VALUES=("55.0" "56.0" "54.5" "53.8" "52.3")
+TEMP_VALUES=("23.1" "23.7" "23.5" "23.8" "23.4")
+HUM_VALUES=("55.0" "54.2" "53.1" "53.4" "52.7")
 
 # Publicar los mensajes
 for ((i=0; i<$MESSAGES; i++)); do
@@ -25,7 +25,7 @@ for ((i=0; i<$MESSAGES; i++)); do
   
   # Mostrar el mensaje enviado
   echo "Mensaje enviado: $JSON_DATA"
+
+  sleep 0.5
   
-  # Esperar un intervalo entre los mensajes
-  sleep 1
 done
