@@ -26,7 +26,6 @@ services:
       POSTGRES_PASSWORD: admin123
       POSTGRES_DB: ciberfisicos
       TZ: Europe/Madrid
-    user: "${UID}:${GID}"
     ports:
       - "5432:5432"
     volumes:
@@ -42,8 +41,6 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin123
-      GF_UID: ${UID}
-      GF_GID: ${GID}
       TZ: Europe/Madrid
     volumes:
       - ./grafana/grafana_data:/var/lib/grafana
