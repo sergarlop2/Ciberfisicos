@@ -35,6 +35,10 @@ vibración de tipo seno y comprobar su FFT ejecutando el siguiente test:
 
     ./test_acel_seno.sh
 
+## Configuraciones adicionales
+En caso de que se quiera usar un broker MQTT privado (por defecto se usa el de HIVEMQ), hay que modificar
+la variable de entorno **MQTT_BROKER** del servicio **servidor** del fichero **docker-compose.yml**
+
 ## Parada del sistema
 Para parar el sistema hay que ejecutar:
 
