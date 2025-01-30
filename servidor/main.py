@@ -23,7 +23,7 @@ HUM_THRESHOLD_HIGH = 70.0   # Umbral superior para humedad
 HUM_THRESHOLD_LOW = 65.0    # Umbral inferior para humedad
 
 # Umbral FFT
-FFT_THRESHOLD_DB = 20 # Consideramos pico como X dBs por encima del valor medio de la FFT
+FFT_THRESHOLD_DB = 40 # Consideramos pico como X dBs por encima del valor medio de la FFT
 
 # Leer las variables de entorno
 MQTT_BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")  # Valor por defecto si no está definido
@@ -170,7 +170,7 @@ def detect_peak_and_switch_mode(fft_data, client):
     detected = False
 
     # Calculamos el valor medio y el valor máximo de la FFT
-    fft_mean = np.mean(fft_data[1:])
+    fft_mean = np.mean(fft_data[1:]) # no tomamos el valor de frecuencia 0
     fft_max = np.max(fft_data[1:])
 
     # Si el valor máximo se aleja mucho del valor medio, consideramos que hay un pico
@@ -234,17 +234,24 @@ def handle_aceler(msg, client):
             logging.info("Calculando FFTs...")
 
             # Calculamos la FFT para cada componente de aceleración
-            fft_x = [float(20*np.log10(np.abs(val))) for val in np.fft.fftshift(np.fft.fft(aceleraciones_x))]
-            fft_y = [float(20*np.log10(np.abs(val))) for val in np.fft.fftshift(np.fft.fft(aceleraciones_y))]
-            fft_z = [float(20*np.log10(np.abs(val))) for val in np.fft.fftshift(np.fft.fft(aceleraciones_z))]
+            fft_x = [float(20*np.log10(np.abs(val))) for val in np.fft.fft(aceleraciones_x)]
+            fft_y = [float(20*np.log10(np.abs(val))) for val in np.fft.fft(aceleraciones_y)]
+            fft_z = [float(20*np.log10(np.abs(val))) for val in np.fft.fft(aceleraciones_z)]
+
+            n = len(fft_x)
 
             # Obtenemos los valores de frecuencia
-            frecs = np.linspace(-FREC_MUESTREO/2, FREC_MUESTREO/2, len(fft_x)).tolist()
+            frecs = np.linspace(-FREC_MUESTREO/2, FREC_MUESTREO/2, n).tolist()
 
-            # Detectamos picos y cambiamos de modo si es necesario
-            if not detect_peak_and_switch_mode(fft_x, client):
-                if not detect_peak_and_switch_mode(fft_y, client):
-                    detect_peak_and_switch_mode(fft_z, client)
+            # Detectamos picos y cambiamos de modo si es necesario (solo frecuencias positivas)
+            if not detect_peak_and_switch_mode(fft_x[1: n//2 + 1], client): 
+                if not detect_peak_and_switch_mode(fft_y[1: n//2 + 1], client):
+                    detect_peak_and_switch_mode(fft_z[1: n//2 + 1], client)
+
+            # Hacemos el fftshift
+            fft_x = np.fft.fftshift(fft_x).tolist()
+            fft_y = np.fft.fftshift(fft_y).tolist()
+            fft_z = np.fft.fftshift(fft_z).tolist()
 
             # Almacenamos los datos en la base de datos
             store_acel_in_db(aceleraciones_x, aceleraciones_y, aceleraciones_z, timestamps_acel)
