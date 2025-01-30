@@ -25,7 +25,22 @@ Tras iniciar sesión, hay que navegar a la ruta donde están los dashboards:
 Y hacemos click en el dashboard llamado **Ciberfisicos**
 
 Dentro de él ya deberíamos ver cuatro gráficas: Temperatura, Humedad, Aceleraciones
-y FFT
+y FFT:
+
+![Graficas temperatura humedad](images/graficas_temp_hum.png)
+
+![Graficas aceleraciones](images/graficas_aceleraciones.jpeg)
+
+## Detección de vibraciones
+
+Cuando se detecte una vibración en el modo normal, veremos unas gráficas similares
+a estas (64 muestras):
+
+![Detección 64 muestras](images/deteccion_64.jpeg)
+
+Y se pasará al modo continuo, tomando más muestras para realizar las FFTs (1024 muestras):
+
+![Detección 1024 muestras](images/deteccion_1024.jpeg)
 
 ## Tests
 Sin necesidad de tener la placa STM32, se pueden ejecutar algunos tests con los scripts bash
