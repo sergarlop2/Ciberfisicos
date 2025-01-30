@@ -48,7 +48,8 @@ aceleraciones_x = []
 aceleraciones_y = []
 aceleraciones_z = []
 timestamps_acel = []
-MODO_FUNC = 0 # 0 para el modo normal. 1 para el modo continuo
+MODO_FUNC_1 = 0 # 0 para el modo normal. 1 para el modo continuo (nodo 1)
+MODO_FUNC_2 = 0 # 0 para el modo normal. 1 para el modo continuo (nodo 2)
 
 # Configuramos el logger para imprimir por consola
 logging.basicConfig(
@@ -144,29 +145,29 @@ def store_temp_hum_in_db(temperatura, humedad, timestamp):
 
 # Función para cambiar al modo continuo con histeresis
 def check_and_switch_mode(temperatura, humedad, client):
-    global MODO_FUNC
+    global MODO_FUNC_2
 
     # Modo normal -> continuo si se exceden los umbrales superiores
-    if MODO_FUNC == 0 and (temperatura > TEMP_THRESHOLD_HIGH or humedad > HUM_THRESHOLD_HIGH):
-        MODO_FUNC = 1
+    if MODO_FUNC_2 == 0 and (temperatura > TEMP_THRESHOLD_HIGH or humedad > HUM_THRESHOLD_HIGH):
+        MODO_FUNC_2 = 1
         logging.info(f"Cambiando al modo continuo por temperatura={temperatura} o humedad={humedad}.")
 
         # Publicamos mensaje en modo continuo
         client.publish(TOPIC_CONTROL_2, "1")
 
     # Modo continuo -> normal si se bajan los umbrales inferiores
-    elif MODO_FUNC == 1 and (temperatura < TEMP_THRESHOLD_LOW and humedad < HUM_THRESHOLD_LOW):
-        MODO_FUNC = 0
+    elif MODO_FUNC_2 == 1 and (temperatura < TEMP_THRESHOLD_LOW and humedad < HUM_THRESHOLD_LOW):
+        MODO_FUNC_2 = 0
         logging.info(f"Volviendo al modo normal: Temperatura={temperatura}, Humedad={humedad}.")
 
         # Publicamos mensaje en modo normal
         client.publish(TOPIC_CONTROL_2, "0")
     else:
-        logging.info(f"Modo actual ({'continuo' if MODO_FUNC == 1 else 'normal'}): Temperatura={temperatura}, Humedad={humedad}.")
+        logging.info(f"Modo actual ({'continuo' if MODO_FUNC_2 == 1 else 'normal'}): Temperatura={temperatura}, Humedad={humedad}.")
 
 # Función para detectar picos en la FFT y cambiar de modo
 def detect_peak_and_switch_mode(fft_data, client):
-    global MODO_FUNC
+    global MODO_FUNC_1
     detected = False
 
     # Calculamos el valor medio y el valor máximo de la FFT
@@ -176,15 +177,15 @@ def detect_peak_and_switch_mode(fft_data, client):
 
     # Si el valor máximo se aleja mucho del valor medio, consideramos que hay un pico
     if fft_max > fft_mean + FFT_THRESHOLD_DB: 
-        if MODO_FUNC == 0:
-            MODO_FUNC = 1
+        if MODO_FUNC_1 == 0:
+            MODO_FUNC_1 = 1
             detected = True
             # Publicamos mensaje en modo continuo
             client.publish(TOPIC_CONTROL_1, "1")
             logging.info("Detectado pico en la FFT, cambiando al modo continuo.")
     else:
-        if MODO_FUNC == 1:
-            MODO_FUNC = 0
+        if MODO_FUNC_1 == 1:
+            MODO_FUNC_1 = 0
             # Publicamos mensaje en modo normal
             client.publish(TOPIC_CONTROL_1, "0")
             logging.info("No se detectó pico en la FFT, cambiando al modo normal.")
