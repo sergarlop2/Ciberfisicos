@@ -23,7 +23,7 @@ HUM_THRESHOLD_HIGH = 70.0   # Umbral superior para humedad
 HUM_THRESHOLD_LOW = 65.0    # Umbral inferior para humedad
 
 # Umbral FFT
-FFT_THRESHOLD_DB = 40 # Consideramos pico como X dBs por encima del valor medio de la FFT
+FFT_THRESHOLD_DB = 20 # Consideramos pico como X dBs por encima del valor medio de la FFT
 
 # Leer las variables de entorno
 MQTT_BROKER = os.getenv("MQTT_BROKER", "broker.hivemq.com")  # Valor por defecto si no está definido
@@ -170,8 +170,9 @@ def detect_peak_and_switch_mode(fft_data, client):
     detected = False
 
     # Calculamos el valor medio y el valor máximo de la FFT
-    fft_mean = np.mean(fft_data[1:]) # no tomamos el valor de frecuencia 0
-    fft_max = np.max(fft_data[1:])
+    fft_mean = np.mean(fft_data) 
+    fft_max = np.max(fft_data)
+    logging.info(f"FFT_MEAN: {fft_mean} dB | FFT_MAX: {fft_max} dB | THRESHOLD: {FFT_THRESHOLD_DB} dB")
 
     # Si el valor máximo se aleja mucho del valor medio, consideramos que hay un pico
     if fft_max > fft_mean + FFT_THRESHOLD_DB: 
